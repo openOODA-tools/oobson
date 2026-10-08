@@ -1,0 +1,72 @@
+// # oobson Command Line Options Parser
+//
+// Logline: Decodes CLI flags, conversion targets, and operational modes for BSON serialization.
+//
+// Setup: Parses arguments into a structured BsonOpts configuration model.
+//
+// Beats:
+//   1. Define BsonOpts parameter structure.
+//   2. Parse input files, conversion targets, and inspection flags.
+//   3. Dispatch operational modes for help, version, and MCP server.
+//   4. Collect inline payload arguments.
+
+pub type BsonOpts = struct {
+    show_help: Bool,
+    show_version: Bool,
+    mcp_mode: Bool,
+    json_mode: Bool,
+    inspect_mode: Bool,
+    color_mode: Bool,
+    input_file: String,
+    to_format: String,
+    input_payload: String
+};
+
+pub fn parse_opts(args: List[String]) -> BsonOpts {
+    let mut opt: BsonOpts = BsonOpts {
+        show_help: false,
+        show_version: false,
+        mcp_mode: false,
+        json_mode: false,
+        inspect_mode: false,
+        color_mode: true,
+        input_file: "",
+        to_format: "json",
+        input_payload: ""
+    };
+
+    let n: Int = list_len(args);
+    let mut i: Int = 0;
+
+    while i < n {
+        let a: String = list_get(args, i);
+        if a == "-h" || a == "--help" {
+            opt.show_help = true;
+        } else if a == "-v" || a == "--version" {
+            opt.show_version = true;
+        } else if a == "--mcp" {
+            opt.mcp_mode = true;
+        } else if a == "--json" {
+            opt.json_mode = true;
+        } else if a == "--inspect" {
+            opt.inspect_mode = true;
+        } else if (a == "-i" || a == "--input") && i + 1 < n {
+            i = i + 1;
+            opt.input_file = list_get(args, i);
+        } else if (a == "-t" || a == "--to") && i + 1 < n {
+            i = i + 1;
+            opt.to_format = list_get(args, i);
+        } else if a == "--color" && i + 1 < n {
+            i = i + 1;
+            if list_get(args, i) == "never" { opt.color_mode = false; }
+        } else if !str_starts_with(a, "-") {
+            if chars_len(opt.input_payload) > 0 {
+                opt.input_payload = opt.input_payload + " " + a;
+            } else {
+                opt.input_payload = a;
+            }
+        }
+        i = i + 1;
+    }
+    return opt;
+}

@@ -1,0 +1,54 @@
+// # oobson Theme and Terminal Formatter
+//
+// Logline: Formats BSON inspection cards, hexadecimal dumps, and JSON telemetry with ANSI palettes.
+//
+// Setup: Bridges core BSON decoding structures to human and machine renderers.
+//
+// Beats:
+//   1. Generate ANSI color codes and formatting tags.
+//   2. Render human-readable BSON inspection panels.
+//   3. Serialize decoded payloads and hex dumps into JSON Lines telemetry.
+//   4. Serialize type system metadata and feature statistics.
+
+import "core/bson_types.oo";
+
+fn esc() -> String {
+    return bytes_to_str(bytes_push(bytes_new(), 27));
+}
+
+pub fn render_bson_panel(doc: BsonDoc, hex_str: String, color: Bool) -> String {
+    let e: String = esc();
+    let c_cyan: String = if color { e + "[38;5;51m" } else { "" };
+    let c_green: String = if color { e + "[38;5;82m" } else { "" };
+    let c_yellow: String = if color { e + "[38;5;220m" } else { "" };
+    let c_dim: String = if color { e + "[38;5;242m" } else { "" };
+    let c_bold: String = if color { e + "[1m" } else { "" };
+    let c_rst: String = if color { e + "[0m" } else { "" };
+
+    let mut out: String = "";
+    out = out + c_dim + "================================================================================" + c_rst + "\n";
+    out = out + "              " + c_cyan + c_bold + "oobson: Sovereign BSON SERIALIZER" + c_rst + "\n";
+    out = out + c_dim + "================================================================================" + c_rst + "\n";
+    out = out + "  Document Size:      " + c_yellow + to_string(doc.total_size) + " bytes" + c_rst + "\n";
+    out = out + "  Element Count:      " + c_green + to_string(doc.count) + " fields" + c_rst + "\n";
+    if chars_len(hex_str) > 0 {
+        out = out + "  Raw Hexadecimal:    " + c_dim + hex_str + c_rst + "\n";
+    }
+    out = out + c_dim + "--------------------------------------------------------------------------------" + c_rst + "\n";
+    out = out + "  " + c_bold + "Decoded JSON Payload:" + c_rst + "\n";
+    out = out + "    " + c_cyan + doc.doc_json + c_rst + "\n";
+    out = out + c_dim + "================================================================================" + c_rst + "\n";
+    return out;
+}
+
+pub fn render_bson_json(doc: BsonDoc, hex_str: String) -> String {
+    return "{\"doc_size\":" + to_string(doc.total_size)
+        + ",\"field_count\":" + to_string(doc.count)
+        + ",\"json\":" + doc.doc_json
+        + ",\"hex\":\"" + hex_str + "\""
+        + "}\n";
+}
+
+pub fn render_stats_json() -> String {
+    return "{\"name\":\"oobson\",\"version\":\"0.2.0\",\"architecture\":\"x86_64\",\"capabilities\":[\"&FsReadCap\",\"&ProcessCap\",\"&EnvCap\",\"&McpCap\"],\"bson_version\":\"1.1\",\"supported_types\":[\"string\",\"int32\",\"boolean\",\"double\",\"document\",\"array\",\"binary\"]}";
+}

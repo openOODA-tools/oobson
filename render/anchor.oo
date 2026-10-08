@@ -1,0 +1,19 @@
+// # oobson Render Module Anchor
+//
+// Logline: Integrates rendering components and ANSI output formatters for oobson.
+//
+// Setup: Exports theme renderers and JSON serialization endpoints.
+//
+// Beats:
+//   1. Expose terminal panel renderers.
+//   2. Expose JSON telemetry and statistics formatters.
+//   3. Provide render subsystem health verification.
+
+import "core/bson_types.oo";
+import "render/bson_theme.oo";
+
+pub fn verify_render_subsystem() -> Bool {
+    let doc: BsonDoc = BsonDoc { total_size: 16, count: 1, doc_json: "{\"test\":\"ok\"}" };
+    let j: String = render_bson_json(doc, "10000000");
+    return str_starts_with(j, "{\"doc_size\":16");
+}

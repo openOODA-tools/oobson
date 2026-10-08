@@ -1,0 +1,39 @@
+// # oobson Type System and Element Encodings
+//
+// Logline: Data structures and type constants for the BSON binary JSON specification.
+//
+// Setup: Strongly typed definitions for BSON element tags and document containers.
+//
+// Beats:
+//   1. Declare BsonElement and BsonDoc data representations.
+//   2. Define BSON type identifier tag constants.
+//   3. Dispatch human-readable type tag descriptions.
+
+pub type BsonElement = struct {
+    e_type: Int,
+    name: String,
+    val_str: String,
+    val_int: Int,
+    val_bool: Bool
+};
+
+pub type BsonDoc = struct {
+    total_size: Int,
+    count: Int,
+    doc_json: String
+};
+
+pub fn bson_type_name(t: Int) -> String {
+    if t == 1 { return "DOUBLE"; }
+    if t == 2 { return "STRING"; }
+    if t == 3 { return "DOCUMENT"; }
+    if t == 4 { return "ARRAY"; }
+    if t == 5 { return "BINARY"; }
+    if t == 7 { return "OBJECTID"; }
+    if t == 8 { return "BOOLEAN"; }
+    if t == 9 { return "DATETIME"; }
+    if t == 10 { return "NULL"; }
+    if t == 16 { return "INT32"; }
+    if t == 18 { return "INT64"; }
+    return "UNKNOWN";
+}

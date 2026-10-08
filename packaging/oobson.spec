@@ -1,5 +1,5 @@
 Name:           oobson
-Version:        0.1.0
+Version:        0.2.0
 Release:        1%{?dist}
 Summary:        Binary JSON encoder and decoder with bson-to-json streaming converters.
 License:        ASL 2.0

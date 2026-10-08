@@ -1,0 +1,131 @@
+// # oobson Model Context Protocol Stdio Server
+//
+// Logline: Dispatches JSON-RPC 2.0 streaming tools for AI agents serializing BSON payloads.
+//
+// Setup: Bridges stdio frames to BSON binary codecs and structural inspectors.
+//
+// Beats:
+//   1. Handle MCP initialize and tools/list requests.
+//   2. Route bson_decode, bson_encode, bson_inspect, and bson_stats tool calls.
+//   3. Stream line-delimited JSON-RPC 2.0 responses.
+
+import "core/bson_types.oo";
+import "core/bson_codec.oo";
+import "render/bson_theme.oo";
+import "ipc/json_field.oo";
+
+fn parse_num(s: String, def_val: Int) -> Int {
+    let n: Int = chars_len(s);
+    if n == 0 { return def_val; }
+    let mut res: Int = 0;
+    let mut i: Int = 0;
+    while i < n {
+        let c: String = char_at(s, i);
+        if c == "0" { res = res * 10; }
+        else if c == "1" { res = res * 10 + 1; }
+        else if c == "2" { res = res * 10 + 2; }
+        else if c == "3" { res = res * 10 + 3; }
+        else if c == "4" { res = res * 10 + 4; }
+        else if c == "5" { res = res * 10 + 5; }
+        else if c == "6" { res = res * 10 + 6; }
+        else if c == "7" { res = res * 10 + 7; }
+        else if c == "8" { res = res * 10 + 8; }
+        else if c == "9" { res = res * 10 + 9; }
+        else { return def_val; }
+        i = i + 1;
+    }
+    return res;
+}
+
+fn handle_tools_list(id_val: String) -> String {
+    return "{\"jsonrpc\":\"2.0\",\"id\":" + id_val + ",\"result\":{\"tools\":["
+        + "{\"name\":\"bson_decode\",\"description\":\"Decode hexadecimal BSON binary payload into a JSON object\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"hex\":{\"type\":\"string\"}},\"required\":[\"hex\"]}},"
+        + "{\"name\":\"bson_encode\",\"description\":\"Encode simple key-value parameters into a BSON hexadecimal stream\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"key\":{\"type\":\"string\"},\"val_str\":{\"type\":\"string\"},\"key_int\":{\"type\":\"string\"},\"val_int\":{\"type\":\"number\"}}}},"
+        + "{\"name\":\"bson_inspect\",\"description\":\"Inspect BSON document structural element boundaries\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"hex\":{\"type\":\"string\"}}}},"
+        + "{\"name\":\"bson_stats\",\"description\":\"Query oobson serialization engine metadata and supported type tags\",\"inputSchema\":{\"type\":\"object\",\"properties\":{}}}"
+        + "]}}";
+}
+
+fn handle_tool_call(id_val: String, params: String) -> String {
+    let tool_name: String = json_get_string(params, "name");
+    let args: String = json_get_field(params, "arguments");
+
+    if tool_name == "bson_decode" {
+        let hex: String = json_get_string(args, "hex");
+        let raw: String = hex_to_bytes(hex);
+        let doc: BsonDoc = decode_bson(raw);
+        let text: String = render_bson_json(doc, hex);
+        return "{\"jsonrpc\":\"2.0\",\"id\":" + id_val + ",\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"" + json_escape_string(text) + "\"}]}}";
+    }
+
+    if tool_name == "bson_encode" {
+        let k1: String = json_get_string(args, "key");
+        let v1: String = json_get_string(args, "val_str");
+        let k2: String = json_get_string(args, "key_int");
+        let v2_str: String = json_get_field(args, "val_int");
+        let v2: Int = parse_num(v2_str, 0);
+
+        let raw: String = encode_simple_bson(k1, v1, k2, v2);
+        let hex: String = bytes_to_hex(raw);
+        let doc: BsonDoc = decode_bson(raw);
+        let text: String = render_bson_json(doc, hex);
+        return "{\"jsonrpc\":\"2.0\",\"id\":" + id_val + ",\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"" + json_escape_string(text) + "\"}]}}";
+    }
+
+    if tool_name == "bson_inspect" {
+        let hex: String = json_get_string(args, "hex");
+        let raw: String = hex_to_bytes(hex);
+        let doc: BsonDoc = decode_bson(raw);
+        let text: String = render_bson_panel(doc, hex, false);
+        return "{\"jsonrpc\":\"2.0\",\"id\":" + id_val + ",\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"" + json_escape_string(text) + "\"}]}}";
+    }
+
+    if tool_name == "bson_stats" {
+        let text: String = render_stats_json();
+        return "{\"jsonrpc\":\"2.0\",\"id\":" + id_val + ",\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"" + json_escape_string(text) + "\"}]}}";
+    }
+
+    return "{\"jsonrpc\":\"2.0\",\"id\":" + id_val + ",\"error\":{\"code\":-32601,\"message\":\"Unknown tool: " + tool_name + "\"}}";
+}
+
+pub fn handle_mcp_message(line: String) -> String {
+    let method: String = json_get_string(line, "method");
+    let raw_id: String = json_get_field(line, "id");
+    let id_val: String = if chars_len(raw_id) > 0 { raw_id } else { "null" };
+
+    if method == "initialize" {
+        return "{\"jsonrpc\":\"2.0\",\"id\":" + id_val + ",\"result\":{\"protocolVersion\":\"2024-11-05\",\"capabilities\":{\"tools\":{}},\"serverInfo\":{\"name\":\"oobson\",\"version\":\"0.2.0\"}}}";
+    }
+    if method == "notifications/initialized" {
+        return "";
+    }
+    if method == "tools/list" {
+        return handle_tools_list(id_val);
+    }
+    if method == "tools/call" {
+        let params: String = json_get_field(line, "params");
+        return handle_tool_call(id_val, params);
+    }
+    return "{\"jsonrpc\":\"2.0\",\"id\":" + id_val + ",\"error\":{\"code\":-32600,\"message\":\"Unsupported method: " + method + "\"}}";
+}
+
+pub fn run_mcp_server(fs: &FsReadCap) {
+    let mut running: Bool = true;
+    while running {
+        let line_res: Result[String, String] = oo_read_stdin_chunk(fs, 8192);
+        if !line_res.is_ok() {
+            running = false;
+        } else {
+            let line: String = match line_res { Ok(s) => s, Err(_) => "" };
+            let trimmed: String = str_trim(line);
+            if chars_len(trimmed) == 0 {
+                running = false;
+            } else {
+                let resp: String = handle_mcp_message(trimmed);
+                if chars_len(resp) > 0 {
+                    println(resp);
+                }
+            }
+        }
+    }
+}

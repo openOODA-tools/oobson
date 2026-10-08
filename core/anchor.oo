@@ -1,0 +1,19 @@
+// # oobson Core Module Anchor
+//
+// Logline: Integrates BSON data structures and binary encoding/decoding engines.
+//
+// Setup: Bridges BSON type definitions and vector codecs for consumers.
+//
+// Beats:
+//   1. Expose BSON structure definitions and type identifiers.
+//   2. Expose encoding and decoding pipeline routines.
+//   3. Provide core subsystem health verification predicate.
+
+import "core/bson_types.oo";
+import "core/bson_codec.oo";
+
+pub fn verify_core_subsystem() -> Bool {
+    let raw: String = encode_simple_bson("test", "val", "num", 42);
+    let doc: BsonDoc = decode_bson(raw);
+    return doc.count == 2;
+}

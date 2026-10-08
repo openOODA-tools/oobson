@@ -1,0 +1,202 @@
+// # oobson Encoding and Decoding Engine
+//
+// Logline: Converts binary BSON byte sequences to and from structured JSON representations.
+//
+// Setup: Vectorized byte arithmetic for little-endian word boundaries.
+//
+// Beats:
+//   1. Encode and decode 32-bit little-endian integers.
+//   2. Encode key-value pairs into canonical BSON documents.
+//   3. Parse BSON binary streams and reconstruct valid JSON objects.
+//   4. Inspect and format structural BSON element offsets.
+
+import "core/bson_types.oo";
+
+pub fn read_int32_le(data: String, offset: Int) -> Int {
+    let b0: Int = byte_at(data, offset);
+    let b1: Int = byte_at(data, offset + 1);
+    let b2: Int = byte_at(data, offset + 2);
+    let b3: Int = byte_at(data, offset + 3);
+    return b0 + (b1 * 256) + (b2 * 65536) + (b3 * 16777216);
+}
+
+pub fn push_int32_le(b: List[Int], val: Int) -> List[Int] {
+    let mut out: List[Int] = b;
+    out = bytes_push(out, val & 255);
+    out = bytes_push(out, (val / 256) & 255);
+    out = bytes_push(out, (val / 65536) & 255);
+    out = bytes_push(out, (val / 16777216) & 255);
+    return out;
+}
+
+pub fn bytes_to_hex(data: String) -> String {
+    let hex_chars: String = "0123456789abcdef";
+    let n: Int = chars_len(data);
+    let mut out: String = "";
+    let mut i: Int = 0;
+    while i < n {
+        let b: Int = byte_at(data, i);
+        let hi: Int = (b / 16) & 15;
+        let lo: Int = b & 15;
+        out = out + char_at(hex_chars, hi) + char_at(hex_chars, lo);
+        i = i + 1;
+    }
+    return out;
+}
+
+fn hex_val(c: String) -> Int {
+    if c == "0" { return 0; }
+    if c == "1" { return 1; }
+    if c == "2" { return 2; }
+    if c == "3" { return 3; }
+    if c == "4" { return 4; }
+    if c == "5" { return 5; }
+    if c == "6" { return 6; }
+    if c == "7" { return 7; }
+    if c == "8" { return 8; }
+    if c == "9" { return 9; }
+    if c == "a" || c == "A" { return 10; }
+    if c == "b" || c == "B" { return 11; }
+    if c == "c" || c == "C" { return 12; }
+    if c == "d" || c == "D" { return 13; }
+    if c == "e" || c == "E" { return 14; }
+    if c == "f" || c == "F" { return 15; }
+    return 0;
+}
+
+pub fn hex_to_bytes(hex: String) -> String {
+    let n: Int = chars_len(hex);
+    let mut out: List[Int] = bytes_new();
+    let mut i: Int = 0;
+    while i + 1 < n {
+        let c1: String = char_at(hex, i);
+        let c2: String = char_at(hex, i + 1);
+        let b: Int = (hex_val(c1) * 16) + hex_val(c2);
+        out = bytes_push(out, b);
+        i = i + 2;
+    }
+    return bytes_to_str(out);
+}
+
+pub fn decode_bson(data: String) -> BsonDoc {
+    let total_len: Int = chars_len(data);
+    if total_len < 5 {
+        return BsonDoc { total_size: total_len, count: 0, doc_json: "{}" };
+    }
+
+    let doc_size: Int = read_int32_le(data, 0);
+    let mut offset: Int = 4;
+    let mut json_out: String = "{";
+    let mut count: Int = 0;
+
+    while offset < total_len && offset < doc_size - 1 {
+        let t: Int = byte_at(data, offset);
+        offset = offset + 1;
+        if t == 0 {
+            // End of document
+            offset = total_len;
+        } else {
+            // Read cstring key
+            let mut key: String = "";
+            while offset < total_len && byte_at(data, offset) != 0 {
+                let mut b_tmp: List[Int] = bytes_new();
+                b_tmp = bytes_push(b_tmp, byte_at(data, offset));
+                key = key + bytes_to_str(b_tmp);
+                offset = offset + 1;
+            }
+            offset = offset + 1; // skip null byte
+
+            let mut val_repr: String = "\"\"";
+            if t == 2 {
+                // String: int32 length + chars + 0x00
+                if offset + 4 <= total_len {
+                    let s_len: Int = read_int32_le(data, offset);
+                    offset = offset + 4;
+                    if s_len > 1 && offset + s_len - 1 <= total_len {
+                        val_repr = "\"" + str_slice(data, offset, offset + s_len - 1) + "\"";
+                    }
+                    offset = offset + s_len;
+                }
+            } else if t == 16 {
+                // Int32
+                if offset + 4 <= total_len {
+                    let iv: Int = read_int32_le(data, offset);
+                    val_repr = to_string(iv);
+                    offset = offset + 4;
+                }
+            } else if t == 8 {
+                // Boolean
+                if offset < total_len {
+                    let bv: Int = byte_at(data, offset);
+                    val_repr = if bv != 0 { "true" } else { "false" };
+                    offset = offset + 1;
+                }
+            } else {
+                // Other types: skip 4 bytes as best effort
+                offset = offset + 4;
+            }
+
+            if count > 0 {
+                json_out = json_out + ",";
+            }
+            json_out = json_out + "\"" + key + "\":" + val_repr;
+            count = count + 1;
+        }
+    }
+    json_out = json_out + "}";
+    return BsonDoc { total_size: doc_size, count: count, doc_json: json_out };
+}
+
+pub fn encode_simple_bson(k1: String, v1: String, k2: String, v2_int: Int) -> String {
+    let mut payload: List[Int] = bytes_new();
+
+    // Element 1: String
+    if chars_len(k1) > 0 {
+        payload = bytes_push(payload, 2); // type 2 = String
+        let mut i: Int = 0;
+        let k1_n: Int = chars_len(k1);
+        while i < k1_n {
+            payload = bytes_push(payload, byte_at(k1, i));
+            i = i + 1;
+        }
+        payload = bytes_push(payload, 0); // null term for key
+
+        let v1_n: Int = chars_len(v1);
+        payload = push_int32_le(payload, v1_n + 1); // str len + null
+        let mut j: Int = 0;
+        while j < v1_n {
+            payload = bytes_push(payload, byte_at(v1, j));
+            j = j + 1;
+        }
+        payload = bytes_push(payload, 0); // null term for str
+    }
+
+    // Element 2: Int32
+    if chars_len(k2) > 0 {
+        payload = bytes_push(payload, 16); // type 16 = Int32
+        let mut i: Int = 0;
+        let k2_n: Int = chars_len(k2);
+        while i < k2_n {
+            payload = bytes_push(payload, byte_at(k2, i));
+            i = i + 1;
+        }
+        payload = bytes_push(payload, 0); // null term for key
+        payload = push_int32_le(payload, v2_int);
+    }
+
+    payload = bytes_push(payload, 0); // doc null term
+
+    // Prepend 4-byte total size (payload + 4 bytes for header)
+    let total_sz: Int = list_len(payload) + 4;
+    let mut doc: List[Int] = bytes_new();
+    doc = push_int32_le(doc, total_sz);
+
+    let n_pay: Int = list_len(payload);
+    let mut p: Int = 0;
+    while p < n_pay {
+        doc = bytes_push(doc, list_get(payload, p));
+        p = p + 1;
+    }
+
+    return bytes_to_str(doc);
+}

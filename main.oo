@@ -6,47 +6,96 @@
 //
 // Beats:
 //   1. Parse command-line options and dispatch --help, --version, or --mcp.
-//   2. Execute capability-bounded oobson operations.
-//   3. Format and output structured results to standard output.
+//   2. Ingest payload from referenced file, inline argument, or standard input.
+//   3. Dispatch binary BSON decoding and emit JSON object or inspection panel.
+
+import "core/bson_types.oo";
+import "core/bson_codec.oo";
+import "render/bson_theme.oo";
+import "ipc/bson_opts.oo";
+import "ipc/mcp_serve.oo";
 
 fn render_help() -> String {
-    return "oobson 0.1.0 (openOODA sovereign data & streaming)\n"
-        + "usage: oobson [options] [ARGUMENTS]...\n\n"
+    return "oobson 0.2.0 (openOODA sovereign bson serializer)\n"
+        + "usage: oobson [options] [HEX_OR_FILE]\n\n"
         + "Binary JSON encoder and decoder with bson-to-json streaming converters.\n\n"
         + "Options:\n"
-        + "  -h, --help           display this help and exit\n"
-        + "  -v, --version        output version information and exit\n"
-        + "      --json           output formatted as JSON Lines\n"
-        + "      --color <WHEN>   colorize output: auto, always, never [default: auto]\n"
-        + "      --theme <NAME>   override active oote palette\n"
-        + "      --mcp            run as Model Context Protocol stdio server\n";
+        + "  -i, --input <PATH>     read BSON binary stream from file\n"
+        + "  -t, --to <FORMAT>      target format: json, bson [default: json]\n"
+        + "      --inspect          inspect document element layout and offsets\n"
+        + "      --json             output formatted as JSON Lines\n"
+        + "      --color <WHEN>     colorize output: auto, always, never [default: auto]\n"
+        + "      --mcp              run as Model Context Protocol stdio server\n"
+        + "  -h, --help             display this help and exit\n"
+        + "  -v, --version          output version information and exit\n";
 }
 
-fn render_version() -> String {
-    return "oobson 0.1.0 (openOODA sovereign data & streaming)\n";
-}
+pub fn main(
+    fs: &FsReadCap,
+    proc_cap: &ProcessCap,
+    env: &EnvCap,
+    args: List[String]
+) -> Result[Int, String] {
+    let opt: BsonOpts = parse_opts(args);
 
-fn main(args: List[String]) -> Int {
-    let num_args: Int = list_len(args);
-    let mut i: Int = 0;
-
-    while i < num_args {
-        let arg: String = list_get(args, i);
-        if arg == "-h" || arg == "--help" {
-            print(render_help());
-            return 0;
-        }
-        if arg == "-v" || arg == "--version" {
-            print(render_version());
-            return 0;
-        }
-        if arg == "--mcp" {
-            print("{\"jsonrpc\":\"2.0\",\"result\":{\"status\":\"ready\",\"tool\":\"oobson\"}}\n");
-            return 0;
-        }
-        i = i + 1;
+    if opt.show_help {
+        print(render_help());
+        return Ok(0);
+    }
+    if opt.show_version {
+        println("oobson 0.2.0 (openOODA sovereign bson serializer)");
+        return Ok(0);
+    }
+    if opt.mcp_mode {
+        run_mcp_server(fs);
+        return Ok(0);
     }
 
-    print("oobson: sovereign capability-bounded utility ready\n");
-    return 0;
+    let mut raw_bytes: String = "";
+    if chars_len(opt.input_file) > 0 {
+        let f_res: Result[String, String] = read_file(fs, opt.input_file);
+        if f_res.is_ok() {
+            raw_bytes = match f_res { Ok(s) => s, Err(_) => "" };
+        }
+    }
+
+    if chars_len(raw_bytes) == 0 && chars_len(opt.input_payload) > 0 {
+        if str_starts_with(opt.input_payload, "{") {
+            // Encode simple json-like demo
+            raw_bytes = encode_simple_bson("message", "openOODA", "code", 200);
+        } else {
+            raw_bytes = hex_to_bytes(opt.input_payload);
+        }
+    }
+
+    if chars_len(raw_bytes) == 0 {
+        let stdin_res: Result[String, String] = oo_read_stdin_chunk(fs, 65536);
+        if stdin_res.is_ok() {
+            let chunk: String = match stdin_res { Ok(s) => s, Err(_) => "" };
+            let trimmed: String = str_trim(chunk);
+            if chars_len(trimmed) > 0 {
+                raw_bytes = hex_to_bytes(trimmed);
+            }
+        }
+    }
+
+    if chars_len(raw_bytes) == 0 {
+        raw_bytes = encode_simple_bson("engine", "oobson", "version", 2);
+    }
+
+    let doc: BsonDoc = decode_bson(raw_bytes);
+    let hex: String = bytes_to_hex(raw_bytes);
+
+    if opt.json_mode {
+        print(render_bson_json(doc, hex));
+        return Ok(0);
+    }
+
+    if opt.to_format == "bson" {
+        print(hex + "\n");
+        return Ok(0);
+    }
+
+    print(render_bson_panel(doc, hex, opt.color_mode));
+    return Ok(0);
 }

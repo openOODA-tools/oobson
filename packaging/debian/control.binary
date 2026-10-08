@@ -1,0 +1,10 @@
+Package: oobson
+Version: 0.2.0-1
+Section: utils
+Priority: optional
+Architecture: amd64
+Maintainer: openOODA-tools <ops@openooda.org>
+Description: Sovereign BSON SERIALIZER
+ Binary JSON encoder and decoder with bson-to-json streaming converters.
+ 100% pure native openOODA (.oo) utility with zero ambient authority,
+ dual POSIX CLI and streaming JSON-RPC 2.0 Model Context Protocol (MCP) server.
